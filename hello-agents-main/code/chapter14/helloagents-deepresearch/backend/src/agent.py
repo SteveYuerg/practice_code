@@ -165,6 +165,7 @@ class DeepResearchAgent:
             task.stream_token = token
             channel_map[task.id] = {"step": index, "token": token}
 
+        # 推送规划结果
         yield {
             "type": "todo_list",
             "tasks": [self._serialize_task(t) for t in state.todo_items],
@@ -264,6 +265,7 @@ class DeepResearchAgent:
             for thread in threads:
                 thread.join()
 
+        # 生成报告
         report = self.reporting.generate_report(state)
         final_step = len(state.todo_items) + 1
         for event in self._drain_tool_events(state, step=final_step):
@@ -297,6 +299,7 @@ class DeepResearchAgent:
         """Run search + summarization for a single task."""
         task.status = "in_progress"
 
+        # 搜索
         search_result, notices, answer_text, backend = dispatch_search(
             task.query,
             self.config,
@@ -372,6 +375,7 @@ class DeepResearchAgent:
                 "note_path": task.note_path,
             }
 
+            # 总结
             summary_stream, summary_getter = self.summarizer.stream_task_summary(state, task, context)
             try:
                 for event in self._drain_tool_events(state, step=step):

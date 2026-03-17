@@ -8,6 +8,7 @@
 *.tsv
 *.xlsx
 *.xls
+*.arrow
 
 # Ignore model weights and checkpoints
 *.bin
@@ -37,3 +38,13 @@ __pycache__/
 # Ignore OS files
 .DS_Store
 Thumbs.db
+
+# Python-generated files
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
