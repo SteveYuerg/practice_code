@@ -10,19 +10,20 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
+print("helpers reload")
 
-# model_name = "D:/doc/model_weights/qwen3-4B-base"
-# tokenizer = AutoTokenizer.from_pretrained(model_name)
-# model = AutoModelForCausalLM.from_pretrained(model_name)
+model_name = "G:/model_weights/models/model/qwen2.5-1.5B-Instruct"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name)
 
 
-# # Define PAD Token = EOS Token = 50256
-# tokenizer.pad_token = tokenizer.eos_token
-# model.config.pad_token_id = model.config.eos_token_id
+# Define PAD Token = EOS Token = 50256
+tokenizer.pad_token = tokenizer.eos_token
+model.config.pad_token_id = model.config.eos_token_id
 
-# # pad on the left so we can append new tokens on the right
-# tokenizer.padding_side = "left"
-# tokenizer.truncation_side = "left"
+# pad on the left so we can append new tokens on the right
+tokenizer.padding_side = "left"
+tokenizer.truncation_side = "left"
 
 
 # multiple prompts of varying lengths to send to the model at once
@@ -110,19 +111,25 @@ def merge_batches(batch1, batch2):
     past_kv1 = batch1["past_key_values"]
     past_kv2 = batch2["past_key_values"]
     
-    padded_kv1 = []
-    for i in range(len(past_kv1)):
-        k, v = past_kv1[i]
+    key_cache = []
+    value_cache = []
+    for k, v, _ in past_kv1:
         k = F.pad(k, (0, 0, padding1, 0), "constant", 0)
         v = F.pad(v, (0, 0, padding1, 0), "constant", 0)     
-        padded_kv1.append((k, v))
+        key_cache.append(k)
+        value_cache.append(k)
+    past_kv1.key_cache = key_cache
+    past_kv1.value_cache = value_cache
     
-    padded_kv2 = []
-    for i in range(len(past_kv2)):
-        k, v = past_kv2[i]
+    key_cache = []
+    value_cache = []
+    for k, v, _ in past_kv2:
         k = F.pad(k, (0, 0, padding2, 0), "constant", 0)
         v = F.pad(v, (0, 0, padding2, 0), "constant", 0)     
-        padded_kv2.append((k, v))
+        key_cache.append(k)
+        value_cache.append(k)
+    past_kv2.key_cache = key_cache
+    past_kv2.value_cache = value_cache
         
     # now that everything has been padded to have
     # consistent shapes, let's merge
@@ -132,24 +139,30 @@ def merge_batches(batch1, batch2):
         [batch1["position_ids"], batch2["position_ids"]], dim=0) 
     attn_mask = torch.concat([attn_mask1, attn_mask2], dim=0)
     
-    past_kv = []
-    for i in range(len(padded_kv1)):
-        k1, v1 = padded_kv1[i]
-        k2, v2 = padded_kv2[i]
+    past_key = []
+    past_value = []
+    for kv1, kv2 in zip(past_kv1, past_kv2):
+        k1, v1, _ = kv1
+        k2, v2, _ = kv2
+        print(k1.size(), k2.size())
         k = torch.concat([k1, k2], dim=0)
         v = torch.concat([v1, v2], dim=0)
-        past_kv.append((k, v))
+        past_key.append(k)
+        past_value.append(v)
+    past_kv1.key_cache = past_key
+    past_kv1.value_cache = past_value
     
     return {
         "input_ids": input_ids,
         "position_ids": position_ids,
         "attention_mask": attn_mask,
-        "past_key_values": past_kv,
+        "past_key_values": past_kv1,
         "responses": batch1["responses"] + batch2["responses"],
         "tokens_remaining": batch1["tokens_remaining"] + batch2["tokens_remaining"],
     }
 
 
+from transformers.cache_utils import DynamicCache
 def filter_batch(batch):
     # mark all rows with 0 tokens remaining for removal
     remove_indices = []
@@ -179,13 +192,18 @@ def filter_batch(batch):
     ]
 
     past_key_values = batch["past_key_values"]
-    new_past_key_values = []
-    for i in range(len(past_key_values)):
-        k, v = past_key_values[i]
+        # past_key_values = past_key_values.to_legacy_cache()
+
+    new_key_values = []
+    new_value_values = []
+    for k, v, _ in past_key_values:
+        # k, v = past_key_values[i]
         k = k[mask]
         v = v[mask]
-        new_past_key_values.append((k, v))
-    past_key_values = new_past_key_values
+        new_key_values.append(k)
+        new_value_values.append(v)
+    past_key_values.key_cache = new_key_values
+    past_key_values.value_cache = new_value_values
     
     if input_ids.size(0) > 0:
         # next, as an optimization to avoid wasting 
@@ -206,13 +224,15 @@ def filter_batch(batch):
         # do the trunction
         attention_mask = attention_mask[:, truncation_offset:]
         past_key_values = past_key_values
-        new_past_key_values = []
-        for i in range(len(past_key_values)):
-            k, v = past_key_values[i]
+        new_key_values = []
+        new_value_values = []
+        for k, v, _ in past_key_values:
             k = k[:, :, truncation_offset:, :]
             v = v[:, :, truncation_offset:, :]
-            new_past_key_values.append((k, v))
-        past_key_values = new_past_key_values
+            new_key_values.append(k)
+            new_value_values.append(v)
+        past_key_values.key_cache = new_key_values
+        past_key_values.value_cache = new_value_values
     
     # return the new batch
     return {
