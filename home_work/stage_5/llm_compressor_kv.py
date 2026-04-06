@@ -4,6 +4,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from llmcompressor import oneshot
 from llmcompressor.modifiers.quantization import QuantizationModifier
+from llmcompressor.modifiers.quantization.gptq import GPTQModifier
+from llmcompressor.modifiers.awq import AWQModifier
 from compressed_tensors.quantization.quant_args import (
     QuantizationArgs,
     QuantizationStrategy,
@@ -19,11 +21,17 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 kv_cache_scheme = QuantizationArgs(
         num_bits=8,
         type=QuantizationType.FLOAT,
-        strategy=QuantizationStrategy.TENSOR,
+        strategy=QuantizationStrategy.CHANNEL,
         symmetric=True,
         dynamic=False,
     )
 recipe = QuantizationModifier(
+    targets="Linear",
+    # scheme="W4A16",
+    kv_cache_scheme=kv_cache_scheme,
+    ignore=["lm_head", "re:.*mlp.gate$"],
+)
+recipe = AWQModifier(
     targets="Linear",
     # scheme="W4A16",
     kv_cache_scheme=kv_cache_scheme,
@@ -59,6 +67,6 @@ print(tokenizer.decode(output[0]))
 print("==========================================")
 
 # Save to disk in compressed-tensors format.
-SAVE_DIR = "G:/model_weights/models/Qwen/qwen2.5-1.5B-Instruct-KVCache-FP8"
+SAVE_DIR = "G:/model_weights/models/Qwen/qwen2.5-1.5B-Instruct-KVCache-FP8-awq"
 model.save_pretrained(SAVE_DIR)
 tokenizer.save_pretrained(SAVE_DIR)
