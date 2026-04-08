@@ -33,8 +33,8 @@ recipe = QuantizationModifier(
 )
 recipe = AWQModifier(
     targets="Linear",
-    # scheme="W4A16",
-    kv_cache_scheme=kv_cache_scheme,
+    scheme="W4A16",
+    # kv_cache_scheme=kv_cache_scheme,
     ignore=["lm_head", "re:.*mlp.gate$"],
 )
 
